@@ -26,14 +26,11 @@ tabulate
 PyMuPDF  # for fitz
 opencv-python  # for cv2
 Pillow  # for PIL
-streamlit-aggrid==1.1.2
 pypandoc
 markdown
-litellm==1.66.0
+litellm
 openai
 python-dotenv
-aiohttp==3.11.15
-aiobotocore==2.21.1
-boto3==1.37.1
+aiohttp
 openpyxl
 numpy
