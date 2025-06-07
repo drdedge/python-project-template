@@ -83,6 +83,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.gridspec import GridSpec
 
 
 from azure.core.credentials import AzureKeyCredential
@@ -173,7 +176,179 @@ class DocIntelligence:
             
         self.logger.info(f"Created output directory structure at: {base_dir}")
         return paths
-
+    
+    def create_confidence_dashboard(self, result, doc_name: str) -> Optional[str]:
+        """
+        Create a 2x2 grid dashboard of confidence visualizations.
+        
+        Args:
+            result: Azure Document Intelligence analysis result
+            doc_name: Base name of the document
+            
+        Returns:
+            Path to saved dashboard image or None if no confidence data
+        """
+        # Extract confidence scores by page
+        page_confidences = {}
+        all_confidence_scores = []
+        
+        if hasattr(result, 'pages') and result.pages:
+            for page in result.pages:
+                page_num = getattr(page, 'pageNumber', 1)
+                
+                if hasattr(page, 'words') and page.words:
+                    page_scores = []
+                    for word in page.words:
+                        if hasattr(word, 'confidence') and word.confidence is not None:
+                            confidence_value = float(word.confidence)
+                            all_confidence_scores.append(confidence_value)
+                            page_scores.append(confidence_value)
+                    
+                    if page_scores:
+                        page_confidences[page_num] = page_scores
+        
+        # Check if we have any confidence data
+        if not all_confidence_scores:
+            self.logger.warning("No confidence scores found in document")
+            return None
+        
+        # Set up the figure with a 2x2 grid
+        fig = plt.figure(figsize=(16, 12))
+        gs = GridSpec(2, 2, figure=fig, hspace=0.3, wspace=0.3)
+        
+        # Set style for better appearance
+        sns.set_style("whitegrid")
+        
+        # Chart 1: Box & Whisker - Document-Level Word Confidence
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.boxplot(all_confidence_scores, vert=True, patch_artist=True,
+                    boxprops=dict(facecolor='lightblue', color='black'),
+                    medianprops=dict(color='red', linewidth=2),
+                    whiskerprops=dict(color='black'),
+                    capprops=dict(color='black'))
+        ax1.set_ylabel('Confidence Score')
+        ax1.set_title('Document-Level Word Confidence Distribution', fontsize=12, fontweight='bold')
+        ax1.set_ylim(0, 1.05)
+        ax1.grid(True, alpha=0.3)
+        
+        # Add statistics text
+        mean_conf = np.mean(all_confidence_scores)
+        median_conf = np.median(all_confidence_scores)
+        ax1.text(0.02, 0.98, f'Mean: {mean_conf:.3f}\nMedian: {median_conf:.3f}', 
+                transform=ax1.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # Chart 2: Box & Whisker - Page-by-Page Word Confidence
+        ax2 = fig.add_subplot(gs[0, 1])
+        if page_confidences:
+            sorted_pages = sorted(page_confidences.keys())
+            page_data = [page_confidences[p] for p in sorted_pages]
+            positions = range(1, len(sorted_pages) + 1)
+            
+            bp = ax2.boxplot(page_data, positions=positions, vert=True, patch_artist=True,
+                            boxprops=dict(facecolor='lightgreen', color='black'),
+                            medianprops=dict(color='red', linewidth=2),
+                            whiskerprops=dict(color='black'),
+                            capprops=dict(color='black'))
+            
+            ax2.set_xlabel('Page Number')
+            ax2.set_ylabel('Confidence Score')
+            ax2.set_title('Page-by-Page Word Confidence Distribution', fontsize=12, fontweight='bold')
+            ax2.set_ylim(0, 1.05)
+            ax2.set_xticks(positions[::max(1, len(positions)//10)])  # Show up to 10 labels
+            ax2.set_xticklabels([sorted_pages[i-1] for i in positions[::max(1, len(positions)//10)]])
+            ax2.grid(True, alpha=0.3)
+        
+        # Chart 3: Heatmap - Page vs Confidence Bins
+        ax3 = fig.add_subplot(gs[1, 0])
+        
+        # Create confidence bins
+        bins = [0, 0.7, 0.8, 0.9, 1.0]
+        bin_labels = ['0-0.7', '0.7-0.8', '0.8-0.9', '0.9-1.0']
+        
+        # Create matrix for heatmap
+        sorted_pages = sorted(page_confidences.keys())
+        heatmap_data = []
+        
+        for page in sorted_pages:
+            page_scores = page_confidences[page]
+            hist, _ = np.histogram(page_scores, bins=bins)
+            heatmap_data.append(hist)
+        
+        heatmap_data = np.array(heatmap_data).T
+        
+        # Create heatmap
+        im = ax3.imshow(heatmap_data, cmap='YlOrRd', aspect='auto')
+        ax3.set_xticks(range(len(sorted_pages)))
+        ax3.set_xticklabels([str(p) for p in sorted_pages], rotation=45 if len(sorted_pages) > 10 else 0)
+        ax3.set_yticks(range(len(bin_labels)))
+        ax3.set_yticklabels(bin_labels)
+        ax3.set_xlabel('Page Number')
+        ax3.set_ylabel('Confidence Bins')
+        ax3.set_title('Word Count by Confidence Bin per Page', fontsize=12, fontweight='bold')
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax3)
+        cbar.set_label('Word Count', rotation=270, labelpad=15)
+        
+        # Add text annotations if not too many pages
+        if len(sorted_pages) <= 15:
+            for i in range(len(bin_labels)):
+                for j in range(len(sorted_pages)):
+                    text = ax3.text(j, i, int(heatmap_data[i, j]),
+                                   ha="center", va="center", color="black", fontsize=8)
+        
+        # Chart 4: Bar Chart - Low Confidence Word Counts
+        ax4 = fig.add_subplot(gs[1, 1])
+        
+        # Calculate low confidence words per page (< 0.85)
+        low_conf_counts = []
+        for page in sorted_pages:
+            low_count = sum(1 for score in page_confidences[page] if score < 0.85)
+            if low_count > 0:  # Only include pages with low confidence words
+                low_conf_counts.append((page, low_count))
+        
+        # Sort by count and take top 10
+        low_conf_counts.sort(key=lambda x: x[1], reverse=True)
+        top_pages = low_conf_counts[:10]
+        
+        if top_pages:
+            pages, counts = zip(*top_pages)
+            x_pos = np.arange(len(pages))
+            
+            bars = ax4.bar(x_pos, counts, color='salmon', edgecolor='black')
+            ax4.set_xlabel('Page Number')
+            ax4.set_ylabel('Count of Words with Confidence < 0.85')
+            ax4.set_title('Top 10 Pages with Low Confidence Words', fontsize=12, fontweight='bold')
+            ax4.set_xticks(x_pos)
+            ax4.set_xticklabels([str(p) for p in pages])
+            ax4.grid(True, alpha=0.3, axis='y')
+            
+            # Add value labels on bars
+            for bar, count in zip(bars, counts):
+                height = bar.get_height()
+                ax4.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{int(count)}', ha='center', va='bottom', fontsize=9)
+        else:
+            ax4.text(0.5, 0.5, 'No pages with low confidence words\n(all words have confidence ≥ 0.85)',
+                    transform=ax4.transAxes, ha='center', va='center',
+                    fontsize=14, bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
+            ax4.set_title('Top 10 Pages with Low Confidence Words', fontsize=12, fontweight='bold')
+        
+        # Add overall title
+        fig.suptitle(f'Confidence Analysis Dashboard - {doc_name}', fontsize=16, fontweight='bold')
+        
+        # Save the dashboard
+        dashboard_filename = f"{doc_name}_confidence_dashboard.png"
+        dashboard_path = os.path.join(os.path.dirname(self.paths["csv"]), dashboard_filename)
+        
+        plt.tight_layout()
+        plt.savefig(dashboard_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        self.logger.info(f"Saved confidence dashboard to: {dashboard_path}")
+        return dashboard_path
+    
     def calculate_confidence_statistics(self, result) -> Dict[str, Any]:
         """
         Extract and calculate word-level confidence statistics from the document analysis result.
@@ -268,7 +443,7 @@ class DocIntelligence:
             }
         
         return stats
-    
+        
     def save_raw_response(self, result, doc_name: str) -> str:
         """
         Save the raw Azure Document Intelligence response as text for debugging.
@@ -637,7 +812,8 @@ class DocIntelligence:
                     "main_document": results.get("md_file", ""),
                     "pages": results.get("md_pages", [])
                 },
-                "excel_file": results.get("excel_file", "")
+                "excel_file": results.get("excel_file", ""),
+                "confidence_dashboard": results.get("confidence_dashboard", "")  # Add dashboard to log
             },
             "statistics": {
                 "total_pages": len(results.get("md_pages", [])),
@@ -659,7 +835,7 @@ class DocIntelligence:
             self.logger.error(f"Failed to create individual log file: {str(e)}")
             
         return log_path
-
+    
     def process_document(self, document_path: str) -> Dict:
         """Process a single document."""
         if not os.path.exists(document_path):
@@ -701,6 +877,9 @@ class DocIntelligence:
         # Calculate confidence statistics from word-level data
         confidence_stats = self.calculate_confidence_statistics(result)
         
+        # Create confidence dashboard
+        dashboard_path = self.create_confidence_dashboard(result, doc_name)
+        
         # Log confidence summary
         if confidence_stats["document_level"].get("mean") is not None:
             self.logger.info(f"Document confidence - Mean: {confidence_stats['document_level']['mean']:.3f}, " +
@@ -729,7 +908,8 @@ class DocIntelligence:
             "csv_files": csv_files,
             "md_file": md_path,
             "md_pages": md_pages,
-            "confidence_stats": confidence_stats,  # Add confidence stats to results
+            "confidence_stats": confidence_stats,
+            "confidence_dashboard": dashboard_path,  # Add dashboard path
             "excel_file": ""  # Will be populated if tables exist
         }
         
@@ -750,7 +930,7 @@ class DocIntelligence:
             self.create_individual_log(document_path, doc_name, file_ext, results, csv_files_info)
         
         return results
-
+    
     def _split_into_pages(self, content: str, doc_name: str, file_ext: str) -> List[str]:
         """Split content into separate page files."""
         pages = [p.strip() for p in content.split("<!-- PageBreak -->") if p.strip()]
