@@ -1,0 +1,31 @@
+{
+    "app_name": "project-name",
+    "version": "0.1.0",
+    "settings": {
+        "logging": {
+            "level": "INFO",
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "file": "data/logs/app.log"
+        },
+        "api": {
+            "base_url": "https://api.example.com",
+            "timeout": 30,
+            "retry_count": 3
+        },
+        "data": {
+            "input_path": "data/input/",
+            "output_path": "data/output/",
+            "cache_enabled": true
+        }
+    },
+    "features": {
+        "feature_1": {
+            "enabled": true,
+            "config": {}
+        },
+        "feature_2": {
+            "enabled": false,
+            "config": {}
+        }
+    }
+}
