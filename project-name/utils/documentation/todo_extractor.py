@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Set, Optional, Tuple
 from datetime import datetime
-import argparse
+import click
 import json
 from collections import defaultdict
 
@@ -148,7 +148,7 @@ class TodoExtractor:
                         todos.append(todo)
         
         except Exception as e:
-            print(f"Error reading {file_path}: {e}", file=sys.stderr)
+            click.echo(f"Error reading {file_path}: {e}", err=True)
         
         return todos
     
@@ -297,61 +297,52 @@ def generate_report(todos: List[TodoItem], groups: Dict[str, Dict],
         return "\n".join(report)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Extract TODO/FIXME comments from code")
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--tags", nargs="*", 
-                       help="Custom tags to search for (default: TODO, FIXME, HACK, etc.)")
-    parser.add_argument("--format", choices=["text", "json", "markdown"], default="text",
-                       help="Output format (default: text)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--no-git-blame", action="store_true",
-                       help="Disable git blame lookup for author/date")
-    parser.add_argument("--priority", choices=["all", "high", "medium", "low"], default="all",
-                       help="Filter by priority (default: all)")
-    parser.add_argument("--extensions", nargs="*",
-                       help="File extensions to scan (e.g., .py .js)")
-    
-    args = parser.parse_args()
-    
-    root_dir = Path(args.path).resolve()
-    if not root_dir.exists():
-        print(f"Error: Path {root_dir} does not exist", file=sys.stderr)
-        sys.exit(1)
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--tags', multiple=True, help='Custom tags to search for (default: TODO, FIXME, HACK, etc.)')
+@click.option('--format', 'output_format', type=click.Choice(['text', 'json', 'markdown']), default='text',
+              help='Output format (default: text)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--no-git-blame', is_flag=True, help='Disable git blame lookup for author/date')
+@click.option('--priority', type=click.Choice(['all', 'high', 'medium', 'low']), default='all',
+              help='Filter by priority (default: all)')
+@click.option('--extensions', multiple=True, help='File extensions to scan (e.g., .py .js)')
+def main(path, tags, output_format, output, no_git_blame, priority, extensions):
+    """Extract TODO/FIXME comments from code."""
+    root_dir = Path(path).resolve()
     
     # Create extractor
-    extensions = None
-    if args.extensions:
-        extensions = set(ext if ext.startswith('.') else f'.{ext}' for ext in args.extensions)
+    extensions_set = None
+    if extensions:
+        extensions_set = set(ext if ext.startswith('.') else f'.{ext}' for ext in extensions)
     
-    extractor = TodoExtractor(tags=args.tags, extensions=extensions)
+    extractor = TodoExtractor(tags=list(tags) if tags else None, extensions=extensions_set)
     
     # Extract TODOs
-    print(f"Scanning {root_dir} for {', '.join(extractor.tags)}...", file=sys.stderr)
-    todos = extractor.extract_from_directory(root_dir, use_git_blame=not args.no_git_blame)
+    click.echo(f"Scanning {root_dir} for {', '.join(extractor.tags)}...", err=True)
+    todos = extractor.extract_from_directory(root_dir, use_git_blame=not no_git_blame)
     
     # Filter by priority if requested
-    if args.priority != "all":
-        todos = [todo for todo in todos if todo.priority == args.priority]
+    if priority != "all":
+        todos = [todo for todo in todos if todo.priority == priority]
     
     if not todos:
-        print("No TODO items found.", file=sys.stderr)
+        click.echo("No TODO items found.", err=True)
         sys.exit(0)
     
     # Group TODOs
     groups = group_todos(todos)
     
     # Generate report
-    report = generate_report(todos, groups, root_dir, args.format)
+    report = generate_report(todos, groups, root_dir, output_format)
     
     # Output report
-    if args.output:
-        with open(args.output, 'w') as f:
+    if output:
+        with open(output, 'w') as f:
             f.write(report)
-        print(f"Report saved to {args.output}", file=sys.stderr)
+        click.echo(f"Report saved to {output}", err=True)
     else:
-        print(report)
+        click.echo(report)
 
 
 if __name__ == "__main__":

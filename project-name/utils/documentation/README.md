@@ -478,6 +478,34 @@ python utils/documentation/env_documenter.py --format markdown > docs/ENVIRONMEN
 python utils/documentation/changelog_builder.py > CHANGELOG.md
 ```
 
+## Project Maintenance Utilities
+
+Located in `utils/`, these scripts help maintain code quality and consistency:
+
+### 1. Add Filepath Comments (`add_filepath_comments.py`)
+
+Adds relative filepath comments as the first line of all Python files for better code navigation.
+
+**Usage:**
+```bash
+# Preview changes without modifying files
+python utils/add_filepath_comments.py --dry-run
+
+# Add filepath comments to all Python files
+python utils/add_filepath_comments.py
+
+# Use a different root directory
+python utils/add_filepath_comments.py --root-dir /path/to/project
+```
+
+**Example Result:**
+```python
+# utils/shared/document_formatter.py
+
+#!/usr/bin/env python3
+"""Module docstring..."""
+```
+
 ## Shared Utilities
 
 Located in `utils/shared/`, these are reusable utilities for various tasks:
@@ -517,6 +545,55 @@ formatter.to_docx(content, "output.docx")  # Auto-detects HTML vs Markdown
 - Page orientation and margin control
 - In-memory or file-based output
 
+### 2. Azure Document Intelligence Processor (`az_doc_intelligence_processor.py`)
+
+Extracts structured content from documents using Azure Document Intelligence (formerly Form Recognizer).
+
+**Usage:**
+```python
+from utils.shared.az_doc_intelligence_processor import DocIntelligence
+
+# Initialize processor
+processor = DocIntelligence(
+    endpoint="https://your-endpoint.cognitiveservices.azure.com/",
+    key="your-api-key",
+    output_dir="outputs"
+)
+
+# Process a single document
+results = processor.process_document("document.pdf")
+print(f"Extracted {len(results['csv_files'])} tables")
+print(f"Excel workbook: {results.get('excel_file', 'No tables found')}")
+
+# Process entire directory
+results = processor.process_directory(
+    input_dir="documents/",
+    output_dir="outputs/",
+    file_types=["pdf", "docx"]
+)
+```
+
+**Features:**
+- Extracts tables from PDFs, DOCX, and other formats
+- Converts documents to Markdown with structure preserved
+- Generates CSV files for each extracted table
+- Creates Excel workbooks with consolidated table views
+- Tracks extraction confidence scores
+- Creates confidence dashboards and visualizations
+- Provides detailed JSON logs for each processed document
+- Supports batch processing of directories
+
+**Output Structure:**
+```
+output_dir/
+├── csv/                    # Individual table CSV files
+├── md/                     # Full document markdown files
+│   └── md_pages/          # Individual page markdown files
+├── [doc]_tables.xlsx      # Excel workbook with all tables
+├── [doc]_confidence_dashboard.png  # Confidence visualizations
+└── [doc]_processing_log.json      # Processing metadata
+```
+
 ## Requirements
 
 All documentation scripts require Python 3.7+ and only use standard library modules, except:
@@ -524,4 +601,5 @@ All documentation scripts require Python 3.7+ and only use standard library modu
 - Some visualization formats may require additional tools to render (e.g., Graphviz for DOT files)
 
 The shared utilities have additional requirements:
-- `document_formatter.py`: Requires `python-docx` and `pypandoc` packages
+- `document_formatter.py`: Requires `python-docx`, `mistune`, and `htmldocx` packages
+- `az_doc_intelligence_processor.py`: Requires `azure-ai-documentintelligence`, `azure-core`, `pandas`, `numpy`, `matplotlib`, `seaborn`, and `openpyxl` packages

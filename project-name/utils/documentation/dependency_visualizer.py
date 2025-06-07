@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Set, List, Tuple, Optional, Any
 from collections import defaultdict, deque
-import argparse
+import click
 import json
 import textwrap
 from dataclasses import dataclass, field
@@ -192,7 +192,7 @@ class DependencyGraphBuilder:
                         self.edges.append(edge)
                         
             except Exception as e:
-                print(f"Error analyzing {module.path}: {e}", file=sys.stderr)
+                click.echo(f"Error analyzing {module.path}: {e}", err=True)
                 
     def _detect_circular_dependencies(self):
         """Detect circular dependencies using DFS."""
@@ -487,78 +487,72 @@ class DependencyVisualizer:
         return '\n'.join(lines)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Visualize Python project dependencies",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                          # Generate text report
-  %(prog)s --format mermaid         # Generate Mermaid diagram
-  %(prog)s --format graphviz        # Generate Graphviz DOT file
-  %(prog)s --format json            # Generate JSON data
-  %(prog)s --show-external          # Include external dependencies
-  %(prog)s --output graph.dot       # Save to file
-  
-Output formats:
-  text     - Human-readable analysis report
-  mermaid  - Mermaid diagram (can be rendered on GitHub)
-  graphviz - DOT format for Graphviz
-  json     - Machine-readable JSON data
-"""
-    )
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['text', 'mermaid', 'graphviz', 'json']),
+              default='text', help='Output format (default: text)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--show-external', is_flag=True, help='Include external dependencies in visualization')
+@click.option('--exclude', multiple=True, help='Additional directories to exclude')
+def main(path, output_format, output, show_external, exclude):
+    """Visualize Python project dependencies.
     
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--format", choices=["text", "mermaid", "graphviz", "json"],
-                       default="text", help="Output format (default: text)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--show-external", action="store_true",
-                       help="Include external dependencies in visualization")
-    parser.add_argument("--exclude", nargs="*", default=[],
-                       help="Additional directories to exclude")
+    Examples:
     
-    args = parser.parse_args()
+      dependency_visualizer                          # Generate text report
     
-    root_path = Path(args.path).resolve()
-    if not root_path.exists():
-        print(f"Error: Path {root_path} does not exist", file=sys.stderr)
-        sys.exit(1)
+      dependency_visualizer --format mermaid         # Generate Mermaid diagram
+    
+      dependency_visualizer --format graphviz        # Generate Graphviz DOT file
+    
+      dependency_visualizer --format json            # Generate JSON data
+    
+      dependency_visualizer --show-external          # Include external dependencies
+    
+      dependency_visualizer --output graph.dot       # Save to file
+    
+    Output formats:
+      text     - Human-readable analysis report
+      mermaid  - Mermaid diagram (can be rendered on GitHub)
+      graphviz - DOT format for Graphviz
+      json     - Machine-readable JSON data
+    """
+    root_path = Path(path).resolve()
         
     # Build dependency graph
     exclude_dirs = {'.venv', 'venv', 'env', '__pycache__', '.git', 
                    'build', 'dist', '.tox', 'node_modules'}
-    exclude_dirs.update(args.exclude)
+    exclude_dirs.update(exclude)
     
-    print(f"Analyzing dependencies in {root_path}...", file=sys.stderr)
+    click.echo(f"Analyzing dependencies in {root_path}...", err=True)
     builder = DependencyGraphBuilder(root_path, exclude_dirs)
     modules, edges = builder.build_graph()
     
     if not modules:
-        print("No Python modules found.", file=sys.stderr)
+        click.echo("No Python modules found.", err=True)
         sys.exit(0)
         
-    print(f"Found {len(modules)} modules with {len(edges)} dependencies", file=sys.stderr)
+    click.echo(f"Found {len(modules)} modules with {len(edges)} dependencies", err=True)
     
     # Generate visualization
     visualizer = DependencyVisualizer(modules, edges, builder.circular_dependencies)
     
-    if args.format == "text":
-        output = visualizer.to_text_report()
-    elif args.format == "mermaid":
-        output = visualizer.to_mermaid(args.show_external)
-    elif args.format == "graphviz":
-        output = visualizer.to_graphviz(args.show_external)
-    elif args.format == "json":
-        output = visualizer.to_json()
+    if output_format == "text":
+        output_content = visualizer.to_text_report()
+    elif output_format == "mermaid":
+        output_content = visualizer.to_mermaid(show_external)
+    elif output_format == "graphviz":
+        output_content = visualizer.to_graphviz(show_external)
+    elif output_format == "json":
+        output_content = visualizer.to_json()
         
     # Output results
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
-            f.write(output)
-        print(f"Output saved to {args.output}", file=sys.stderr)
+    if output:
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(output_content)
+        click.echo(f"Output saved to {output}", err=True)
     else:
-        print(output)
+        click.echo(output_content)
 
 
 if __name__ == "__main__":

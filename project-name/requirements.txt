@@ -52,3 +52,4 @@ pydantic_settings
 typing-extensions
 asyncio
 zipfile36
+click

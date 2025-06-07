@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set
 from datetime import datetime
 from collections import defaultdict
-import argparse
+import click
 import json
 from dataclasses import dataclass, field
 
@@ -195,7 +195,7 @@ class GitLogReader:
             return commits
             
         except subprocess.CalledProcessError as e:
-            print(f"Error reading git log: {e}", file=sys.stderr)
+            click.echo(f"Error reading git log: {e}", err=True)
             return []
             
     def get_remote_url(self) -> Optional[str]:
@@ -489,86 +489,77 @@ class ChangelogBuilder:
         }, indent=2)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate changelog from git commits using Conventional Commits",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                           # Generate full changelog
-  %(prog)s --from v1.0.0             # Changes since v1.0.0
-  %(prog)s --from v1.0.0 --to v2.0.0 # Changes between versions
-  %(prog)s --format json             # Output as JSON
-  %(prog)s --output CHANGELOG.md     # Save to file
-  %(prog)s --include-all             # Include non-conventional commits
-  
-Conventional Commit Format:
-  type(scope): description
-  
-  [body]
-  
-  [footer]
-  
-Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
-"""
-    )
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--from', 'from_ref', help='Starting reference (tag/commit)')
+@click.option('--to', 'to_ref', default='HEAD', help='Ending reference (default: HEAD)')
+@click.option('--format', 'output_format', type=click.Choice(['markdown', 'json']), default='markdown',
+              help='Output format (default: markdown)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--include-all', is_flag=True, help="Include commits that don't follow Conventional Commits")
+@click.option('--repo-url', help='Repository URL for generating links')
+def main(path, from_ref, to_ref, output_format, output, include_all, repo_url):
+    """Generate changelog from git commits using Conventional Commits.
     
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to git repository (default: current directory)")
-    parser.add_argument("--from", dest="from_ref",
-                       help="Starting reference (tag/commit)")
-    parser.add_argument("--to", default="HEAD",
-                       help="Ending reference (default: HEAD)")
-    parser.add_argument("--format", choices=["markdown", "json"], default="markdown",
-                       help="Output format (default: markdown)")
-    parser.add_argument("--output", "-o",
-                       help="Output file (default: stdout)")
-    parser.add_argument("--include-all", action="store_true",
-                       help="Include commits that don't follow Conventional Commits")
-    parser.add_argument("--repo-url",
-                       help="Repository URL for generating links")
+    Examples:
     
-    args = parser.parse_args()
+      changelog_builder                           # Generate full changelog
     
-    repo_path = Path(args.path).resolve()
-    if not repo_path.exists():
-        print(f"Error: Path {repo_path} does not exist", file=sys.stderr)
-        sys.exit(1)
+      changelog_builder --from v1.0.0             # Changes since v1.0.0
+    
+      changelog_builder --from v1.0.0 --to v2.0.0 # Changes between versions
+    
+      changelog_builder --format json             # Output as JSON
+    
+      changelog_builder --output CHANGELOG.md     # Save to file
+    
+      changelog_builder --include-all             # Include non-conventional commits
+    
+    Conventional Commit Format:
+      type(scope): description
+      
+      [body]
+      
+      [footer]
+    
+    Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
+    """
+    repo_path = Path(path).resolve()
         
     # Check if it's a git repository
     if not (repo_path / '.git').exists():
-        print(f"Error: {repo_path} is not a git repository", file=sys.stderr)
+        click.echo(f"Error: {repo_path} is not a git repository", err=True)
         sys.exit(1)
         
     # Build changelog
-    builder = ChangelogBuilder(repo_path, args.repo_url)
+    builder = ChangelogBuilder(repo_path, repo_url)
     
-    if args.from_ref:
+    if from_ref:
         # Generate changelog for specific range
-        output = builder.build_changelog(
-            from_tag=args.from_ref,
-            to_ref=args.to,
-            include_all=args.include_all
+        output_content = builder.build_changelog(
+            from_tag=from_ref,
+            to_ref=to_ref,
+            include_all=include_all
         )
         
-        if args.format == 'json':
+        if output_format == 'json':
             # Wrap in JSON structure
-            output = json.dumps({
-                'from': args.from_ref,
-                'to': args.to,
-                'changelog': output
+            output_content = json.dumps({
+                'from': from_ref,
+                'to': to_ref,
+                'changelog': output_content
             }, indent=2)
     else:
         # Generate full changelog
-        output = builder.build_full_changelog(args.format)
+        output_content = builder.build_full_changelog(output_format)
         
     # Output results
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
-            f.write(output)
-        print(f"Changelog saved to {args.output}", file=sys.stderr)
+    if output:
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(output_content)
+        click.echo(f"Changelog saved to {output}", err=True)
     else:
-        print(output)
+        click.echo(output_content)
 
 
 if __name__ == "__main__":

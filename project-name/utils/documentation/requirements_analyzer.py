@@ -12,7 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple
-import argparse
+import click
 from collections import defaultdict
 import pkg_resources
 import importlib.metadata
@@ -167,7 +167,7 @@ class RequirementsAnalyzer:
                             all_imports.add(module_name)
                             
             except Exception as e:
-                print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
+                click.echo(f"Error analyzing {file_path}: {e}", err=True)
         
         return dict(imports_by_file), all_imports
     
@@ -192,7 +192,7 @@ class RequirementsAnalyzer:
                             requirements[package_name] = line
                             
         except Exception as e:
-            print(f"Error reading {req_file}: {e}", file=sys.stderr)
+            click.echo(f"Error reading {req_file}: {e}", err=True)
             
         return requirements
     
@@ -203,7 +203,7 @@ class RequirementsAnalyzer:
         try:
             import toml
         except ImportError:
-            print("Warning: toml package not installed. Cannot parse pyproject.toml", file=sys.stderr)
+            click.echo("Warning: toml package not installed. Cannot parse pyproject.toml", err=True)
             return requirements
             
         try:
@@ -245,7 +245,7 @@ class RequirementsAnalyzer:
                     requirements[name.lower()] = str(version) if version else name
                     
         except Exception as e:
-            print(f"Error parsing {pyproject_file}: {e}", file=sys.stderr)
+            click.echo(f"Error parsing {pyproject_file}: {e}", err=True)
             
         return requirements
     
@@ -538,54 +538,47 @@ def generate_report(analysis: Dict, format: str = "text") -> str:
         return "\n".join(report)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Analyze Python project dependencies")
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--format", choices=["text", "json", "markdown"], default="text",
-                       help="Output format (default: text)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--fix", action="store_true",
-                       help="Generate commands to fix issues")
-    
-    args = parser.parse_args()
-    
-    root_dir = Path(args.path).resolve()
-    if not root_dir.exists():
-        print(f"Error: Path {root_dir} does not exist", file=sys.stderr)
-        sys.exit(1)
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['text', 'json', 'markdown']), default='text',
+              help='Output format (default: text)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--fix', is_flag=True, help='Generate commands to fix issues')
+def main(path, output_format, output, fix):
+    """Analyze Python project dependencies."""
+    root_dir = Path(path).resolve()
     
     # Analyze dependencies
-    print(f"Analyzing dependencies in {root_dir}...", file=sys.stderr)
+    click.echo(f"Analyzing dependencies in {root_dir}...", err=True)
     analyzer = RequirementsAnalyzer(root_dir)
     analysis = analyzer.analyze_dependencies()
     
     # Generate report
-    report = generate_report(analysis, args.format)
+    report = generate_report(analysis, output_format)
     
     # Output report
-    if args.output:
-        with open(args.output, 'w') as f:
+    if output:
+        with open(output, 'w') as f:
             f.write(report)
-        print(f"Report saved to {args.output}", file=sys.stderr)
+        click.echo(f"Report saved to {output}", err=True)
     else:
-        print(report)
+        click.echo(report)
         
     # Generate fix commands if requested
-    if args.fix and (analysis['missing_dependencies'] or analysis['security_vulnerabilities']):
-        print("\n" + "=" * 80, file=sys.stderr)
-        print("SUGGESTED FIXES:", file=sys.stderr)
-        print("=" * 80, file=sys.stderr)
+    if fix and (analysis['missing_dependencies'] or analysis['security_vulnerabilities']):
+        click.echo("\n" + "=" * 80, err=True)
+        click.echo("SUGGESTED FIXES:", err=True)
+        click.echo("=" * 80, err=True)
         
         if analysis['missing_dependencies']:
-            print("\n# Install missing dependencies:", file=sys.stderr)
-            print("pip install " + " ".join(sorted(analysis['missing_dependencies'])), file=sys.stderr)
+            click.echo("\n# Install missing dependencies:", err=True)
+            click.echo("pip install " + " ".join(sorted(analysis['missing_dependencies'])), err=True)
             
         if analysis['security_vulnerabilities']:
-            print("\n# Update vulnerable packages:", file=sys.stderr)
+            click.echo("\n# Update vulnerable packages:", err=True)
             for vuln in analysis['security_vulnerabilities']:
                 if vuln['fix_version']:
-                    print(f"pip install --upgrade {vuln['package']}>={vuln['fix_version'][0]}", file=sys.stderr)
+                    click.echo(f"pip install --upgrade {vuln['package']}>={vuln['fix_version'][0]}", err=True)
 
 
 if __name__ == "__main__":

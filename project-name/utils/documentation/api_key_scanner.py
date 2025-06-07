@@ -9,7 +9,7 @@ import sys
 import re
 from pathlib import Path
 from typing import List, Dict, Set, Optional, Tuple
-import argparse
+import click
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -251,7 +251,7 @@ class APIKeyScanner:
                     findings.extend(line_findings)
                     
         except Exception as e:
-            print(f"Error scanning {file_path}: {e}", file=sys.stderr)
+            click.echo(f"Error scanning {file_path}: {e}", err=True)
             
         return findings
     
@@ -266,7 +266,7 @@ class APIKeyScanner:
                 all_findings.extend(findings)
                 files_scanned += 1
                 
-        print(f"Scanned {files_scanned} files", file=sys.stderr)
+        click.echo(f"Scanned {files_scanned} files", err=True)
         return all_findings
 
 
@@ -350,81 +350,74 @@ def generate_report(findings: List[SecurityFinding], root_path: Path,
     return "\n".join(lines)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Scan codebase for hardcoded API keys and secrets",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                     # Scan current directory
-  %(prog)s /path/to/project    # Scan specific directory
-  %(prog)s --format json       # Output as JSON
-  %(prog)s --confidence high   # Show only high confidence findings
-  %(prog)s --exclude tests     # Exclude additional directories
-  
-Security Tips:
-  - Never commit secrets to version control
-  - Use environment variables for all credentials
-  - Enable pre-commit hooks to catch secrets
-  - Regularly scan your codebase for exposed secrets
-  - Rotate any credentials that may have been exposed
-"""
-    )
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text',
+              help='Output format (default: text)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--confidence', type=click.Choice(['all', 'high', 'medium', 'low']), default='all',
+              help='Minimum confidence level to report')
+@click.option('--exclude', multiple=True, help='Additional directories to exclude')
+@click.option('--add-pattern', 'add_patterns', multiple=True, nargs=3,
+              help='Add custom pattern: REGEX NAME RECOMMENDATION (can be used multiple times)')
+def main(path, output_format, output, confidence, exclude, add_patterns):
+    """Scan codebase for hardcoded API keys and secrets.
     
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to scan (default: current directory)")
-    parser.add_argument("--format", choices=["text", "json"], default="text",
-                       help="Output format (default: text)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--confidence", choices=["all", "high", "medium", "low"],
-                       default="all", help="Minimum confidence level to report")
-    parser.add_argument("--exclude", nargs="*", default=[],
-                       help="Additional directories to exclude")
-    parser.add_argument("--add-pattern", nargs=3, action="append",
-                       metavar=("REGEX", "NAME", "RECOMMENDATION"),
-                       help="Add custom pattern (can be used multiple times)")
+    Examples:
     
-    args = parser.parse_args()
+      api_key_scanner                     # Scan current directory
     
-    root_path = Path(args.path).resolve()
-    if not root_path.exists():
-        print(f"Error: Path {root_path} does not exist", file=sys.stderr)
-        sys.exit(1)
+      api_key_scanner /path/to/project    # Scan specific directory
+    
+      api_key_scanner --format json       # Output as JSON
+    
+      api_key_scanner --confidence high   # Show only high confidence findings
+    
+      api_key_scanner --exclude tests     # Exclude additional directories
+    
+    Security Tips:
+      - Never commit secrets to version control
+      - Use environment variables for all credentials
+      - Enable pre-commit hooks to catch secrets
+      - Regularly scan your codebase for exposed secrets
+      - Rotate any credentials that may have been exposed
+    """
+    root_path = Path(path).resolve()
         
     # Create scanner
-    exclude_paths = set(args.exclude) if args.exclude else None
-    additional_patterns = args.add_pattern if args.add_pattern else None
+    exclude_paths = set(exclude) if exclude else None
+    additional_patterns = list(add_patterns) if add_patterns else None
     
     scanner = APIKeyScanner(exclude_paths=exclude_paths, 
                           additional_patterns=additional_patterns)
     
     # Scan directory
-    print(f"Scanning {root_path} for API keys and secrets...", file=sys.stderr)
+    click.echo(f"Scanning {root_path} for API keys and secrets...", err=True)
     findings = scanner.scan_directory(root_path)
     
     # Filter by confidence if requested
-    if args.confidence != "all":
-        if args.confidence == "high":
+    if confidence != "all":
+        if confidence == "high":
             findings = [f for f in findings if f.confidence == "high"]
-        elif args.confidence == "medium":
+        elif confidence == "medium":
             findings = [f for f in findings if f.confidence in ["high", "medium"]]
-        elif args.confidence == "low":
+        elif confidence == "low":
             findings = findings  # Show all
             
     if not findings:
-        print("No potential secrets found!", file=sys.stderr)
+        click.echo("No potential secrets found!", err=True)
         sys.exit(0)
         
     # Generate report
-    report = generate_report(findings, root_path, args.format)
+    report = generate_report(findings, root_path, output_format)
     
     # Output report
-    if args.output:
-        with open(args.output, 'w') as f:
+    if output:
+        with open(output, 'w') as f:
             f.write(report)
-        print(f"Report saved to {args.output}", file=sys.stderr)
+        click.echo(f"Report saved to {output}", err=True)
     else:
-        print(report)
+        click.echo(report)
         
     # Exit with error code if high confidence findings
     if any(f.confidence == "high" for f in findings):

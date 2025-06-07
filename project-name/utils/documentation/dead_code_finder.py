@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Set, List, Tuple
 from collections import defaultdict
-import argparse
+import click
 import json
 
 
@@ -261,30 +261,23 @@ def generate_report(unused: Dict[str, List[Dict]], orphaned_files: List[str],
     return "\n".join(report)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Find dead code in Python projects")
-    parser.add_argument("path", nargs="?", default=".", 
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--format", choices=["text", "json"], default="text",
-                       help="Output format (default: text)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--exclude", nargs="*", default=[],
-                       help="Additional directories to exclude")
-    
-    args = parser.parse_args()
-    
-    root_dir = Path(args.path).resolve()
-    if not root_dir.exists():
-        print(f"Error: Path {root_dir} does not exist", file=sys.stderr)
-        sys.exit(1)
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text',
+              help='Output format (default: text)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--exclude', multiple=True, help='Additional directories to exclude')
+def main(path, output_format, output, exclude):
+    """Find dead code in Python projects."""
+    root_dir = Path(path).resolve()
     
     # Find all Python files
     exclude_dirs = {'.venv', 'venv', 'env', '__pycache__', '.git', 'build', 'dist'}
-    exclude_dirs.update(args.exclude)
+    exclude_dirs.update(exclude)
     python_files = find_python_files(root_dir, exclude_dirs)
     
     if not python_files:
-        print("No Python files found to analyze", file=sys.stderr)
+        click.echo("No Python files found to analyze", err=True)
         sys.exit(0)
     
     # Analyze files
@@ -297,15 +290,15 @@ def main():
     orphaned_files = find_orphaned_files(root_dir, python_files)
     
     # Generate report
-    report = generate_report(unused, orphaned_files, args.format)
+    report = generate_report(unused, orphaned_files, output_format)
     
     # Output report
-    if args.output:
-        with open(args.output, 'w') as f:
+    if output:
+        with open(output, 'w') as f:
             f.write(report)
-        print(f"Report saved to {args.output}")
+        click.echo(f"Report saved to {output}")
     else:
-        print(report)
+        click.echo(report)
 
 
 if __name__ == "__main__":

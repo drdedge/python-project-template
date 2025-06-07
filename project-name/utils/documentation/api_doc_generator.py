@@ -11,7 +11,7 @@ import re
 import json
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple, Any
-import argparse
+import click
 from collections import defaultdict
 from dataclasses import dataclass, asdict
 
@@ -331,7 +331,7 @@ def analyze_api_files(root_dir: Path, framework: str = "auto",
     
     if framework == "auto":
         framework = detect_framework(root_dir)
-        print(f"Detected framework: {framework}", file=sys.stderr)
+        click.echo(f"Detected framework: {framework}", err=True)
         
     all_endpoints = []
     
@@ -350,7 +350,7 @@ def analyze_api_files(root_dir: Path, framework: str = "auto",
             all_endpoints.extend(analyzer.endpoints)
             
         except Exception as e:
-            print(f"Error analyzing {py_file}: {e}", file=sys.stderr)
+            click.echo(f"Error analyzing {py_file}: {e}", err=True)
             
     return all_endpoints
 
@@ -522,46 +522,39 @@ def find_undocumented_endpoints(endpoints: List[EndpointInfo]) -> List[EndpointI
     return [e for e in endpoints if not e.description]
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate API documentation")
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--format", choices=["markdown", "openapi", "json", "summary"],
-                       default="markdown", help="Output format")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--framework", choices=["auto", "fastapi", "flask", "django"],
-                       default="auto", help="Web framework to analyze")
-    parser.add_argument("--project-name", default="API",
-                       help="Project name for documentation")
-    
-    args = parser.parse_args()
-    
-    root_dir = Path(args.path).resolve()
-    if not root_dir.exists():
-        print(f"Error: Path {root_dir} does not exist", file=sys.stderr)
-        sys.exit(1)
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['markdown', 'openapi', 'json', 'summary']),
+              default='markdown', help='Output format')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--framework', type=click.Choice(['auto', 'fastapi', 'flask', 'django']),
+              default='auto', help='Web framework to analyze')
+@click.option('--project-name', default='API', help='Project name for documentation')
+def main(path, output_format, output, framework, project_name):
+    """Generate API documentation."""
+    root_dir = Path(path).resolve()
         
     # Analyze API files
-    print(f"Analyzing API endpoints in {root_dir}...", file=sys.stderr)
-    endpoints = analyze_api_files(root_dir, args.framework)
+    click.echo(f"Analyzing API endpoints in {root_dir}...", err=True)
+    endpoints = analyze_api_files(root_dir, framework)
     
     if not endpoints:
-        print("No API endpoints found.", file=sys.stderr)
+        click.echo("No API endpoints found.", err=True)
         sys.exit(0)
         
-    print(f"Found {len(endpoints)} endpoints", file=sys.stderr)
+    click.echo(f"Found {len(endpoints)} endpoints", err=True)
     
     # Generate output based on format
     output = ""
     
-    if args.format == "markdown":
-        output = generate_markdown_docs(endpoints, root_dir)
-    elif args.format == "openapi":
-        spec = generate_openapi_spec(endpoints, args.project_name)
-        output = json.dumps(spec, indent=2)
-    elif args.format == "json":
-        output = json.dumps([asdict(e) for e in endpoints], indent=2)
-    elif args.format == "summary":
+    if output_format == "markdown":
+        output_content = generate_markdown_docs(endpoints, root_dir)
+    elif output_format == "openapi":
+        spec = generate_openapi_spec(endpoints, project_name)
+        output_content = json.dumps(spec, indent=2)
+    elif output_format == "json":
+        output_content = json.dumps([asdict(e) for e in endpoints], indent=2)
+    elif output_format == "summary":
         # Generate summary
         undocumented = find_undocumented_endpoints(endpoints)
         
@@ -590,15 +583,15 @@ def main():
                 rel_path = Path(e.file_path).relative_to(root_dir)
                 summary.append(f"  {e.method} {e.path} ({rel_path}:{e.line_number})")
                 
-        output = "\n".join(summary)
+        output_content = "\n".join(summary)
         
     # Output results
-    if args.output:
-        with open(args.output, 'w') as f:
-            f.write(output)
-        print(f"Documentation saved to {args.output}", file=sys.stderr)
+    if output:
+        with open(output, 'w') as f:
+            f.write(output_content)
+        click.echo(f"Documentation saved to {output}", err=True)
     else:
-        print(output)
+        click.echo(output_content)
 
 
 if __name__ == "__main__":

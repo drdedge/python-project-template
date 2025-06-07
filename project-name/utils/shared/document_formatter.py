@@ -1,7 +1,99 @@
-#!/usr/bin/env python3
+# utils/shared/document_formatter.py
 """
-Document Formatter Utility
-Converts markdown or HTML content to formatted Word documents with customizable styling.
+Word Document Formatter
+=======================
+
+This module provides a high-level interface for converting Markdown and HTML content
+to professionally formatted Microsoft Word documents (.docx) with extensive customization
+options for fonts, colors, styles, and layout.
+
+Key Features:
+------------
+- Converts Markdown to Word documents with proper formatting
+- Converts HTML to Word documents preserving structure
+- Auto-detects input format (Markdown vs HTML)
+- Customizable fonts for body text and headings
+- Configurable heading sizes and colors
+- Custom table styling with colored headers
+- Page orientation control (portrait/landscape)
+- Adjustable page margins
+- Supports both file-based and in-memory operations
+- Preserves list formatting with custom fonts
+- Reference document support for template-based styling
+
+Main Components:
+---------------
+- WordDocFormatter: Main formatter class that handles document conversion
+- Markdown conversion: Uses mistune to parse markdown before converting
+- HTML conversion: Direct HTML to DOCX conversion with structure preservation
+- Style management: Applies consistent styling across all document elements
+- Table formatting: Special handling for tables with styled headers
+- In-memory operations: Generate documents without writing to disk
+
+Output Options:
+--------------
+- File output: Save directly to a .docx file
+- Memory output: Return document as binary data for web applications
+- Reference templates: Use existing documents as style templates
+
+Usage Examples:
+--------------
+
+1. Basic Markdown to Word conversion:
+   ```python
+   from utils.shared import WordDocFormatter
+   
+   formatter = WordDocFormatter()
+   formatter.markdown_to_docx("# Hello World\\n\\nThis is a test.", "output.docx")
+   ```
+
+2. Custom styling with landscape orientation:
+   ```python
+   formatter = WordDocFormatter(
+       font_name="Arial",
+       font_size=12,
+       heading_color="#FF0000",
+       page_orientation="landscape",
+       margins={"top": 0.5, "bottom": 0.5, "left": 0.5, "right": 0.5}
+   )
+   formatter.to_docx(content, "styled_output.docx")
+   ```
+
+3. In-memory conversion for web applications:
+   ```python
+   # For Streamlit or Flask apps
+   formatter = WordDocFormatter()
+   binary_data = formatter.to_memory("# My Report\\n\\nContent here...")
+   
+   # In Streamlit:
+   st.download_button("Download Word Doc", binary_data, "report.docx")
+   ```
+
+4. HTML to Word conversion:
+   ```python
+   html_content = "<h1>Title</h1><p>Paragraph with <strong>bold</strong> text.</p>"
+   formatter.html_to_docx(html_content, "from_html.docx")
+   ```
+
+5. Using a reference document for styling:
+   ```python
+   formatter = WordDocFormatter()
+   formatter.to_docx(
+       content,
+       "output.docx",
+       reference_docx_path="company_template.docx"
+   )
+   ```
+
+Dependencies:
+------------
+- python-docx: Core library for creating/modifying Word documents
+- mistune: Markdown parser for converting Markdown to HTML
+- htmldocx: HTML to DOCX conversion utilities
+
+Note: This module is designed to work with the python-docx library and requires
+proper installation of all dependencies listed in requirements.txt.
+
 """
 
 

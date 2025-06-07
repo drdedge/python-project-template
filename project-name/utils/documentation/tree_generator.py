@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Set, Optional, Tuple
-import argparse
+import click
 import fnmatch
 from dataclasses import dataclass
 
@@ -53,7 +53,7 @@ class GitignoreParser:
                     else:
                         self.patterns.append(line)
         except Exception as e:
-            print(f"Warning: Could not read .gitignore: {e}", file=sys.stderr)
+            click.echo(f"Warning: Could not read .gitignore: {e}", err=True)
     
     def is_ignored(self, path: Path) -> bool:
         """Check if a path should be ignored based on gitignore patterns."""
@@ -243,67 +243,55 @@ def generate_tree_output(root_path: Path, format: str = "tree", **kwargs) -> str
     return "\n".join(lines)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a tree diagram of project structure",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                     # Show tree of current directory
-  %(prog)s /path/to/project    # Show tree of specific directory
-  %(prog)s --no-files          # Show only directories
-  %(prog)s --max-depth 2       # Limit depth to 2 levels
-  %(prog)s --format markdown   # Output in markdown format
-  %(prog)s --show-hidden       # Include hidden files/directories
-  %(prog)s --no-gitignore      # Don't use .gitignore patterns
-"""
-    )
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True, file_okay=False))
+@click.option('--format', 'output_format', type=click.Choice(['tree', 'markdown']), default='tree',
+              help='Output format (default: tree)')
+@click.option('--max-depth', type=int, help='Maximum depth to traverse')
+@click.option('--no-files', is_flag=True, help='Show only directories')
+@click.option('--show-hidden', is_flag=True, help='Show hidden files and directories')
+@click.option('--no-gitignore', is_flag=True, help="Don't use .gitignore patterns")
+@click.option('--exclude', multiple=True, help='Additional patterns to exclude')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+def main(path, output_format, max_depth, no_files, show_hidden, no_gitignore, exclude, output):
+    """Generate a tree diagram of project structure.
     
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to generate tree for (default: current directory)")
-    parser.add_argument("--format", choices=["tree", "markdown"], default="tree",
-                       help="Output format (default: tree)")
-    parser.add_argument("--max-depth", type=int, metavar="N",
-                       help="Maximum depth to traverse")
-    parser.add_argument("--no-files", action="store_true",
-                       help="Show only directories")
-    parser.add_argument("--show-hidden", action="store_true",
-                       help="Show hidden files and directories")
-    parser.add_argument("--no-gitignore", action="store_true",
-                       help="Don't use .gitignore patterns")
-    parser.add_argument("--exclude", nargs="*", metavar="PATTERN",
-                       help="Additional patterns to exclude")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
+    Examples:
     
-    args = parser.parse_args()
+      tree_generator                     # Show tree of current directory
     
-    root_path = Path(args.path).resolve()
-    if not root_path.exists():
-        print(f"Error: Path {root_path} does not exist", file=sys.stderr)
-        sys.exit(1)
-        
-    if not root_path.is_dir():
-        print(f"Error: {root_path} is not a directory", file=sys.stderr)
-        sys.exit(1)
+      tree_generator /path/to/project    # Show tree of specific directory
+    
+      tree_generator --no-files          # Show only directories
+    
+      tree_generator --max-depth 2       # Limit depth to 2 levels
+    
+      tree_generator --format markdown   # Output in markdown format
+    
+      tree_generator --show-hidden       # Include hidden files/directories
+    
+      tree_generator --no-gitignore      # Don't use .gitignore patterns
+    """
+    root_path = Path(path).resolve()
     
     # Generate tree
-    output = generate_tree_output(
+    output_content = generate_tree_output(
         root_path,
-        format=args.format,
-        show_files=not args.no_files,
-        show_hidden=args.show_hidden,
-        max_depth=args.max_depth,
-        exclude_patterns=args.exclude or [],
-        use_gitignore=not args.no_gitignore
+        format=output_format,
+        show_files=not no_files,
+        show_hidden=show_hidden,
+        max_depth=max_depth,
+        exclude_patterns=list(exclude) if exclude else [],
+        use_gitignore=not no_gitignore
     )
     
     # Output results
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
-            f.write(output)
-        print(f"Tree saved to {args.output}", file=sys.stderr)
+    if output:
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(output_content)
+        click.echo(f"Tree saved to {output}", err=True)
     else:
-        print(output)
+        click.echo(output_content)
 
 
 if __name__ == "__main__":

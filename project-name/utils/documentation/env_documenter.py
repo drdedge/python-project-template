@@ -10,7 +10,7 @@ import sys
 import re
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple
-import argparse
+import click
 import json
 from collections import defaultdict
 
@@ -188,7 +188,7 @@ def analyze_python_file(file_path: Path) -> List[EnvVarUsage]:
         
         return analyzer.env_vars
     except Exception as e:
-        print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
+        click.echo(f"Error analyzing {file_path}: {e}", err=True)
         return []
 
 
@@ -210,7 +210,7 @@ def analyze_config_files(root_dir: Path) -> Dict[str, List[str]]:
                                 var_name = line.split('=', 1)[0].strip()
                                 config_vars[env_file].append(var_name)
             except Exception as e:
-                print(f"Error reading {file_path}: {e}", file=sys.stderr)
+                click.echo(f"Error reading {file_path}: {e}", err=True)
                 
     # Check docker-compose files
     compose_files = ['docker-compose.yml', 'docker-compose.yaml']
@@ -225,7 +225,7 @@ def analyze_config_files(root_dir: Path) -> Dict[str, List[str]]:
                     env_refs = re.findall(r'\$\{([A-Z_][A-Z0-9_]*)\}', content)
                     config_vars[compose_file].extend(env_refs)
             except Exception as e:
-                print(f"Error reading {file_path}: {e}", file=sys.stderr)
+                click.echo(f"Error reading {file_path}: {e}", err=True)
                 
     return dict(config_vars)
 
@@ -469,52 +469,45 @@ def validate_env_files(analysis: Dict, root_dir: Path) -> List[str]:
     return warnings
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Document environment variables in a project")
-    parser.add_argument("path", nargs="?", default=".",
-                       help="Path to analyze (default: current directory)")
-    parser.add_argument("--format", choices=["text", "markdown", "json"], default="markdown",
-                       help="Output format (default: markdown)")
-    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
-    parser.add_argument("--validate", action="store_true",
-                       help="Validate environment configuration")
-    
-    args = parser.parse_args()
-    
-    root_dir = Path(args.path).resolve()
-    if not root_dir.exists():
-        print(f"Error: Path {root_dir} does not exist", file=sys.stderr)
-        sys.exit(1)
+@click.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--format', 'output_format', type=click.Choice(['text', 'markdown', 'json']), default='markdown',
+              help='Output format (default: markdown)')
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: stdout)')
+@click.option('--validate', is_flag=True, help='Validate environment configuration')
+def main(path, output_format, output, validate):
+    """Document environment variables in a project."""
+    root_dir = Path(path).resolve()
     
     # Find all environment variables
-    print(f"Analyzing environment variables in {root_dir}...", file=sys.stderr)
+    click.echo(f"Analyzing environment variables in {root_dir}...", err=True)
     env_vars, config_vars = find_all_env_vars(root_dir)
     
     if not env_vars and not config_vars:
-        print("No environment variables found.", file=sys.stderr)
+        click.echo("No environment variables found.", err=True)
         sys.exit(0)
     
     # Analyze the variables
     analysis = analyze_env_vars(env_vars, config_vars)
     
     # Generate documentation
-    documentation = generate_documentation(analysis, config_vars, root_dir, args.format)
+    documentation = generate_documentation(analysis, config_vars, root_dir, output_format)
     
     # Validate if requested
-    if args.validate:
+    if validate:
         warnings = validate_env_files(analysis, root_dir)
         if warnings:
-            print("\nValidation Warnings:", file=sys.stderr)
+            click.echo("\nValidation Warnings:", err=True)
             for warning in warnings:
-                print(f"  - {warning}", file=sys.stderr)
+                click.echo(f"  - {warning}", err=True)
     
     # Output documentation
-    if args.output:
-        with open(args.output, 'w') as f:
+    if output:
+        with open(output, 'w') as f:
             f.write(documentation)
-        print(f"Documentation saved to {args.output}", file=sys.stderr)
+        click.echo(f"Documentation saved to {output}", err=True)
     else:
-        print(documentation)
+        click.echo(documentation)
 
 
 if __name__ == "__main__":
